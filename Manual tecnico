@@ -1,0 +1,235 @@
+### Manual Tecnico
+Este microservicio está desarrollado en Ruby on Rails y sirve como:
+   • Servidor MCP (Model Context Protocol)
+   • Puente entre LLMs y el API Gateway del sistema
+   • Orquestador de herramientas y llamadas remotas
+   • Servidor JSON-RPC
+El componente central es MCPService, encargado de:
+   • Registrar especificaciones de herramientas.
+   • Administrar el flujo entre el LLM y la API REST del Tablero.
+   • Ejecutar llamadas a través del SDK MCP o mediante fallback HTTP.
+   • Enviar respuestas JSON-RPC al cliente.
+
+### Estructura del Repositorio
+mcp-server/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # Integración continua
+│       ├── deploy.yml              # Despliegue automático
+│       └── dependabot.yml          # Dependabot para actualizaciones
+│
+├── .kamal/
+│   ├── hooks/                      # Hooks de despliegue
+│   │   ├── docker-setup.sample
+│   │   ├── post-app-boot.sample
+│   │   ├── post-deploy.sample
+│   │   ├── pre-app-boot.sample
+│   │   ├── pre-build.sample
+│   │   ├── pre-connect.sample
+│   │   ├── pre-deploy.sample
+│   │   └── post-proxy-reboot.sample
+│   │
+│   └── secrets/                    # Lugar para llaves de producción
+│
+├── app/
+│   ├── controllers/
+│   │   ├── concerns/
+│   │   │   └── .keep
+│   │   ├── application_controller.rb
+│   │   ├── llm_controller.rb       # Endpoint para comunicación con modelos LLM
+│   │   └── rpc_controller.rb       # Manejo de llamadas JSON-RPC
+│   │
+│   ├── jobs/
+│   │   └── application_job.rb
+│   │
+│   ├── mailers/
+│   │   └── application_mailer.rb
+│   │
+│   ├── models/
+│   │   ├── concerns/
+│   │   │   └── .keep
+│   │   └── application_record.rb
+│   │
+│   ├── services/
+│   │   ├── api/
+│   │   │   ├── base_client.rb            # Cliente base para llamadas HTTP
+│   │   │   ├── equipo_service.rb
+│   │   │   ├── jugador_service.rb
+│   │   │   ├── localidad_service.rb
+│   │   │   └── partido_service.rb        # Conexión con API Gateway
+│   │   │
+│   │   ├── tools/
+│   │   │   ├── api_service_tool.rb
+│   │   │   ├── keycloak_token_service.rb  # Obtención de tokens Keycloak
+│   │   │   ├── llm_service.rb             # Interfaz con modelos LLM
+│   │   │   ├── mcp_service.rb             # Lógica MCP
+│   │   │   └── open_router_agent_service.rb
+│
+├── config/
+│   ├── environments/
+│   │   ├── development.rb
+│   │   ├── production.rb
+│   │   └── test.rb
+│   │
+│   ├── initializers/
+│   │   ├── api_gateway.rb
+│   │   ├── cors.rb
+│   │   ├── filter_parameter_logging.rb
+│   │   ├── inflections.rb
+│   │   ├── mcp_server.rb
+│   │   ├── rswag_api.rb
+│   │   └── rswag_ui.rb                # Swagger UI
+│   │
+│   ├── locales/
+│   │   └── en.yml
+│   │
+│   ├── application.rb
+│   ├── database.yml
+│   ├── deploy.yml
+│   ├── routes.rb
+│   └── puma.rb
+│
+├── db/
+│   ├── seeds.rb
+│   ├── cable_schema.rb
+│   ├── queue_schema.rb
+│   └── cache_schema.rb
+│
+├── public/
+│   └── robots.txt
+│
+├── spec/                            # Pruebas RSpec
+│   ├── integration/
+│   │   ├── rpc_spec.rb
+│   │   └── swagger_helper.rb
+│   │
+│   └── swagger/v1/swagger.yaml
+│
+├── Dockerfile                       # Imagen Docker del servidor Rails
+├── Gemfile                          # Dependencias Ruby
+├── Gemfile.lock
+├── config.ru                        # Entry Rack
+└── README.md
+
+### Diagrama de arquitectura
+sequenceDiagram
+    participant Cliente RPC
+    participant RPCController
+    participant MCPService
+    participant LLMService
+    participant API Gateway
+    participant Backend Tablero
+
+    Cliente RPC->>RPCController: JSON-RPC Request
+    RPCController->>MCPService: Procesar petición
+    MCPService->>LLMService: Enviar input al modelo
+    LLMService-->>MCPService: Decisión del modelo (con o sin herramienta)
+    alt Modelo usa herramienta
+        MCPService->>API Gateway: Llamada HTTP según spec
+        API Gateway->>Backend Tablero: Acciones CRUD / procesos
+        Backend Tablero-->>API Gateway: Respuesta
+        API Gateway-->>MCPService: Resultado final
+    else Fallback
+        MCPService->>API Gateway: Llamada directa
+    end
+    MCPService-->>RPCController: Resultado MCP
+    RPCController-->>Cliente RPC: JSON-RPC Response
+
+### Detalle de microservicios y lenguajes
+Lenguaje:
+   • Ruby 3.x
+Framework:
+   • Ruby on Rails 7.x
+Bibliotecas principales:
+| Gem                | Uso                   |
+| ------------------ | --------------------- |
+| rails              | Framework principal   |
+| httparty / faraday | Clientes HTTP         |
+| rswag              | Documentación OpenAPI |
+| kamal              | Despliegue            |
+| puma               | Servidor              |
+| redis              | Caching               |
+| brakeman           | Seguridad             |
+| rubocop            | Estilo y calidad      |
+| rspec              | Pruebas automáticas   |
+
+### Cómo levantar el sistema localmente
+- Requisitos
+   • Ruby 3.x
+   • Bundler
+   • Docker 
+   • Rails CLI
+- Instalar dependencias
+bundle install
+- Ejecutar en modo desarrollo
+rails s
+La API estará disponible en:
+http://localhost:3000
+- Ejecutar con Docker
+docker build -t mcp-server .
+docker run -p 3000:3000 mcp-server
+- Usar Kamal para despliegue
+kamal deploy
+
+### Especificación de endpoints por microservicio
+- JSON-RPC
+POST /rpc
+   Recibe:
+{
+  "jsonrpc": "2.0",
+  "method": "llm.complete",
+  "params": { "input": "..." },
+  "id": 1
+}
+- LLM Service
+POST /llm
+Procesa instrucciones enviadas por el LLM.
+
+### Seguridad
+   • Manejo de tokens mediante KeycloakTokenService.
+   • Requerimiento de token para llamadas al API Gateway.
+   • Sanitización de parámetros (filter_parameter_logging.rb).
+   • CORS configurado para acceso controlado.
+   • Opcional: firmas en RPC.
+
+ # Integración con API Gateway
+Servicios incluidos:
+   • EquipoService
+   • JugadorService
+   • LocalidadService
+   • PartidoService
+Cada uno utiliza BaseClient para manejar:
+   • Headers estándar
+   • JWT generado por Keycloak
+   • Manejo de errores y timeouts
+
+ # Flujo de Uso (MCP)
+El flujo completo del sistema:
+   • RpcController recibe una llamada JSON-RPC con entrada del usuario.
+   • MCPService:
+      - Registra la spec de herramientas si aún no existen.
+      - Envía el input al modelo (OpenAI / OpenRouter).
+   • El modelo decide:
+      - Usar una herramienta, entonces MCP ejecuta la llamada.
+      - Responder directamente, sin usar herramientas.
+   • Si el SDK no soporta alguna acción:
+      - MCP hace una llamada HTTP directa al API Gateway.
+   • La respuesta vuelve a RPCController y se entrega al cliente.
+
+### Posibles errores y soluciones
+-Error: “Missing Keycloak token”
+-Solución:
+  Revisar configuraciones en keycloak_token_service.rb.
+-Error: “API Gateway timeout”
+-Solución:
+  Verificar URL configurada en config/initializers/api_gateway.rb.
+-Error: “Spec not registered”
+-Solución:
+  Forzar la inicialización en MCPService.register_tools.
+-Error JSON-RPC mal formado
+-Solución:
+  Validar estructura mínima: jsonrpc, method, id.
+-Error: “Connection refused to Backend”
+-Solución:
+  Revisar que el backend esté disponible.
+  Verificar variables de entorno de host/puerto.
